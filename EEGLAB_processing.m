@@ -1,0 +1,80 @@
+% Specify the directory path
+directory = 'D:\Neurolandscape_EEG\Finland_2025\Dropbox\Mind Monitor';
+
+% Get a list of all CSV files in the directory and subdirectories
+csvFiles = dir(fullfile(directory, '**', '*.csv'));
+
+% Loop over each CSV file
+for i = 1:length(csvFiles)
+    csvFilePath = fullfile(csvFiles(i).folder, csvFiles(i).name);
+    csv=readtable(csvFilePath,'HeaderLines', 0,'Delimiter',',');
+    externals=csv(2:end,["Accelerometer_X","Accelerometer_Y","Accelerometer_Z","Gyro_X","Gyro_Y","Gyro_Z",...
+        "PPG_Ambient","PPG_IR","PPG_Red","Heart_Rate"]);
+    % Load the EEG data
+    EEG = pop_musemonitor(csvFilePath);
+    EEG.data=table2array(csv(2:end,["RAW_TP9","RAW_AF7","RAW_AF8","RAW_TP10"]))';
+    EEG.srate=256;
+    for ch = 1:size(EEG.data, 1)
+        EEG.data(ch, :) = fillmissing(EEG.data(ch, :), 'linear');
+    end
+    for ch = 1:size(externals, 2)
+        externals(:,ch) = fillmissing(externals(:,ch), 'linear');
+    end
+    % Define standard Muse 2 channel locations
+    channelLabels = {EEG.chanlocs.labels};  % Get current channel labels
+
+    % Load standard 10-20 channel locations
+    EEG = pop_chanedit(EEG, 'lookup','standard-10-5-cap385.elp');
+    % Assign standard positions to known Muse channels
+    for ch = 1:length(EEG.chanlocs)
+        switch upper(channelLabels{ch})
+            case 'TP9'
+                EEG.chanlocs(ch).labels = 'TP9';
+                EEG.chanlocs(ch).X = -71; EEG.chanlocs(ch).Y = -51; EEG.chanlocs(ch).Z = -22;
+            case 'TP10'
+                EEG.chanlocs(ch).labels = 'TP10';
+                EEG.chanlocs(ch).X = 71; EEG.chanlocs(ch).Y = -51; EEG.chanlocs(ch).Z = -22;
+            case 'AF7'
+                EEG.chanlocs(ch).labels = 'AF7';
+                EEG.chanlocs(ch).X = -57; EEG.chanlocs(ch).Y = 67; EEG.chanlocs(ch).Z = 13;
+            case 'AF8'
+                EEG.chanlocs(ch).labels = 'AF8';
+                EEG.chanlocs(ch).X = 57; EEG.chanlocs(ch).Y = 67; EEG.chanlocs(ch).Z = 13;
+        end
+    end
+    % Recalculate channel locations to ensure consistency
+    EEG = eeg_checkset(EEG);
+    EEG.data = EEG.data - mean(EEG.data, 2);
+
+    % Apply bandpass filter (0.5–40 Hz)
+    EEG = pop_eegfiltnew(EEG, 0.5, 40);
+
+    % Run artifact cleaning (ASR only, no flatline or channel rejection)
+    EEG_clean = clean_artifacts(EEG, ...
+        'FlatlineCriterion', 'off', ...
+        'ChannelCriterion', 'off', ...
+        'BurstCriterion', 5, ...
+        'WindowCriterion', 0.5,'LineNoiseCriterion', 'off','highpass_band','off', ...
+        'BurstRejection', 'off','WindowRejection','off',...
+        'UseRiemannian',true);
+    try
+        externals=externals(EEG_clean.etc.clean_sample_mask,:);
+        EEG_clean.data=EEG_clean.data(:,EEG_clean.etc.clean_sample_mask);
+    catch
+    end
+    % Prepare output file path for saving
+    [~, fileName, ~] = fileparts(csvFilePath);
+    % Define output Excel file path
+    % Define output Excel file path
+    outputXLSX = fullfile(csvFiles(i).folder, [fileName '.xlsx']);
+
+    % Convert EEG.data to table and label columns
+    processedOut = array2table(EEG_clean.data');
+    for ch = 1:length(EEG.chanlocs)
+        processedOut.Properties.VariableNames{ch} = EEG.chanlocs(ch).labels;
+    end
+    processedOut=cat(2,processedOut,externals);
+    % Write to Excel with sheets
+    writetable(processedOut, outputXLSX, 'Sheet', 'Processed');
+end
+
