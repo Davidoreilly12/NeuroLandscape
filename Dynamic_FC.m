@@ -18,9 +18,9 @@ for i = 1:size(Data,1)
         eegA=hilbert(eegA);
 
         [b,a] = butter(4,(freqz(combos_f(band,2),2)/(fs/2)), 'low');
-        eegA=filtfilt(b,a,eeg);
-        [b,a] = butter(4,(freqz(combos_f(band,2),1)/(fs/2)), 'high');
         eegB=filtfilt(b,a,eeg);
+        [b,a] = butter(4,(freqz(combos_f(band,2),1)/(fs/2)), 'high');
+        eegB=filtfilt(b,a,eegB);
         eegB=hilbert(eegB);
 
         for PA = 1:4
@@ -111,4 +111,5 @@ for i = 1:size(Data,1)
     NC = [{Rs},{Ss},{UYZs}];
     save('D:\Neurolandscape_EEG\Nova Gorcia_2025\NC.mat','NC');
     fprintf('Participant %d done \n', i)
+
 end
